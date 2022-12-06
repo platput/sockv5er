@@ -9,9 +9,10 @@ import (
 
 func TestRead(t *testing.T) {
 	s := Settings{
-		AccessKeyId: "1234567890",
-		SecretKey:   "09876654321",
-		SocksV5Port: 1774,
+		AccessKeyId:     "1234567890",
+		SecretKey:       "09876654321",
+		SocksV5Port:     1774,
+		GeoLocationFile: "assets/IP2LOCATION-LITE-DB1.IPV6.BIN",
 	}
 	setAllENVs(&s)
 	env := ENVData{}
@@ -21,6 +22,9 @@ func TestRead(t *testing.T) {
 	}
 	if (*settings).AccessKeyId != s.AccessKeyId || (*settings).SecretKey != s.SecretKey || (*settings).SocksV5Port != s.SocksV5Port {
 		t.Error("Unexpected values from the env")
+	}
+	if (*settings).GeoLocationFile != "assets/IP2LOCATION-LITE-DB1.IPV6.BIN" {
+		t.Error("Incorrect GeoLocationFile value.")
 	}
 }
 
