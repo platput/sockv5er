@@ -41,3 +41,18 @@ func (h *GeoHelper) FindCountry(ep string) (string, error) {
 	}
 	return results.Country_long, nil
 }
+
+func (h *GeoHelper) GetCountryShortName(country string) string {
+	var shortName string
+	switch country {
+	case "United States of America":
+		shortName = "USA"
+	case "United Kingdom of Great Britain and Northern Ireland":
+		shortName = "UK"
+	case "Korea (Republic of)":
+		shortName = "S.Korea"
+	default:
+		shortName = country
+	}
+	return shortName
+}
