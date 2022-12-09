@@ -4,7 +4,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func GenerateCountyOptions() ([]map[string]string, error) {
+func GenerateCountryOptions() ([]map[string]string, error) {
 	var countryOptions []map[string]string
 	e := ENVData{}
 	settings, _ := e.Read()

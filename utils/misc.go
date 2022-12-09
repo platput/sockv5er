@@ -21,7 +21,7 @@ func showIntro() {
 }
 
 func getRegionsAndCountries() []map[string]string {
-	countryOptions, err := GenerateCountyOptions()
+	countryOptions, err := GenerateCountryOptions()
 	if err != nil {
 		log.Fatalf("Generating country options failed with error: %s\n", err)
 	}
@@ -48,13 +48,16 @@ func getRegionFromUserInput(countryOptions []map[string]string, selection int) (
 	return region, nil
 }
 
-func getUserInput(numberOfRegions int) int {
+func getUserInput(numberOfRegions int, in *os.File) int {
+	if in == nil {
+		in = os.Stdin
+	}
 	regionsRange := numberOfRegions
 	var regionID int = 0
 	fmt.Println("Enter the id of the region in which you need to create the socks v5 proxy on.")
 	fmt.Printf("Default is 1. Range 1-%d: ", numberOfRegions)
 	for {
-		_, err := fmt.Scanln(&regionID)
+		_, err := fmt.Fscanf(in, "%d\n", &regionID)
 		if err != nil {
 			log.Fatalf("Unexpected input. %s", err)
 		} else if regionID > 0 && regionID <= regionsRange {
@@ -70,7 +73,7 @@ func StartWorker() {
 	showIntro()
 	countryOptions := getRegionsAndCountries()
 	showRegionsOptions(countryOptions)
-	selection := getUserInput(len(countryOptions))
+	selection := getUserInput(len(countryOptions), nil)
 	region, err := getRegionFromUserInput(countryOptions, selection)
 	if err != nil {
 		log.Fatalf("SockV5er failed with error: %s", err)
