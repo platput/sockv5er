@@ -53,7 +53,7 @@ func getUserInput(numberOfRegions int, in *os.File) int {
 		in = os.Stdin
 	}
 	regionsRange := numberOfRegions
-	var regionID int = 0
+	var regionID = 0
 	fmt.Println("Enter the id of the region in which you need to create the socks v5 proxy on.")
 	fmt.Printf("Default is 1. Range 1-%d: ", numberOfRegions)
 	for {
