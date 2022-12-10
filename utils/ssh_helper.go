@@ -39,6 +39,8 @@ func (config *SSHConfig) StartSocksV5Server() {
 		}
 	}(sshConn)
 	log.Infoln("Connected to ssh server")
+	ch := make(chan os.Signal)
+
 	go func() {
 		conf := &socks5.Config{
 			Dial: func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -54,17 +56,18 @@ func (config *SSHConfig) StartSocksV5Server() {
 		if err := serverSocks.ListenAndServe("tcp", socksV5Address); err != nil {
 			log.Fatalf("Failed to create socks5 server %s", err)
 		}
-		exitCh := make(chan os.Signal)
-		signal.Notify(exitCh, syscall.SIGINT, syscall.SIGTERM)
-		go func() {
-			<-exitCh
-			cleanup()
-			os.Exit(0)
-		}()
 	}()
 	log.Infoln("Started SocksV5 server.")
 	log.Infoln("Press CTRL+C to stop SocksV5 server and exit!")
-	ch := make(chan os.Signal)
+
+	go func(ch chan os.Signal) {
+		exitSignal := <-ch
+		if exitSignal == syscall.SIGINT || exitSignal == syscall.SIGTERM {
+			cleanup()
+			os.Exit(0)
+		}
+	}(ch)
+
 	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
 	<-ch
 	return
