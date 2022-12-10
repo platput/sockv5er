@@ -69,6 +69,20 @@ func getUserInput(numberOfRegions int, in *os.File) int {
 	return regionID
 }
 
+func createSocksV5Tunnel() {
+	config := SSHConfig{}
+	e := ENVData{}
+	settings, _ := e.Read()
+	config.SocksV5IP = "127.0.0.1"
+	config.SocksV5Port = "1337"
+	config.SSHHost = "techtuft.com"
+	config.SSHPort = "22"
+	config.PrivateKey = ReadFileContent(settings.PrivateKeyPath)
+	config.KnownHostsFilepath = settings.SSHKnownHostsPath
+	config.SSHUsername = "ubuntu"
+	config.StartSocksV5Server()
+}
+
 func StartWorker() {
 	showIntro()
 	countryOptions := getRegionsAndCountries()
@@ -79,4 +93,5 @@ func StartWorker() {
 		log.Fatalf("SockV5er failed with error: %s", err)
 	}
 	fmt.Printf("Selected region: %s\n", region)
+	createSocksV5Tunnel()
 }
