@@ -9,8 +9,11 @@ import (
 )
 
 type AWSHelper struct {
-	ec2Client *ec2.Client
-	cfg       config.Config
+	ec2Client       *ec2.Client
+	cfg             config.Config
+	keyPairName     string
+	securityGroupID string
+	ec2InstanceId   string
 }
 
 func (helper *AWSHelper) InitializeAWS(s *Settings) error {
@@ -33,4 +36,32 @@ func (helper *AWSHelper) GetRegions() []types.Region {
 		return nil
 	}
 	return regions.Regions
+}
+
+func (helper *AWSHelper) CreateEC2Instance(region string) (string, error) {
+	return "", nil
+}
+
+func (helper *AWSHelper) CheckIfInstanceIsActive(instanceId string) (bool, error) {
+	return false, nil
+}
+
+func (helper *AWSHelper) CreateSecurityGroup(region string) (string, error) {
+	return "", nil
+}
+
+func (helper *AWSHelper) CreateKeyPair(region string) (string, error) {
+	return "", nil
+}
+
+func (helper *AWSHelper) DeleteKeyPair(region string) error {
+	return nil
+}
+
+func (helper *AWSHelper) DeleteSecurityGroup(region string, sgName string) error {
+	return nil
+}
+
+func (helper *AWSHelper) TerminateEC2Instance(region string, instanceID string) error {
+	return nil
 }

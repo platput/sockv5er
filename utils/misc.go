@@ -20,8 +20,33 @@ func showIntro() {
 	fmt.Println("Please wait a moment.")
 }
 
-func getRegionsAndCountries() []map[string]string {
-	countryOptions, err := GenerateCountryOptions()
+type SocksV5Er struct {
+	settings  *Settings
+	awsHelper *AWSHelper
+}
+
+func (s *SocksV5Er) generateCountryOptions() ([]map[string]string, error) {
+	var countryOptions []map[string]string
+	regions := s.awsHelper.GetRegions()
+	gh := GeoHelper{Settings: s.settings}
+	for i := range regions {
+		country, err := gh.FindCountry(*regions[i].Endpoint)
+		if err != nil {
+			log.Warnf("Finding country for endpoint %s failed with error %v", *regions[i].Endpoint, err)
+		} else {
+			country := gh.GetCountryShortName(country)
+			countryToRegionMap := map[string]string{
+				"country": country,
+				"region":  *regions[i].RegionName,
+			}
+			countryOptions = append(countryOptions, countryToRegionMap)
+		}
+	}
+	return countryOptions, nil
+}
+
+func (s *SocksV5Er) getRegionsAndCountries() []map[string]string {
+	countryOptions, err := s.generateCountryOptions()
 	if err != nil {
 		log.Fatalf("Generating country options failed with error: %s\n", err)
 	}
@@ -84,8 +109,14 @@ func createSocksV5Tunnel() {
 }
 
 func StartWorker() {
+	s := SocksV5Er{}
+	awsHelper := AWSHelper{}
+	s.awsHelper = &awsHelper
+	e := ENVData{}
+	s.settings, _ = e.Read()
+	err := awsHelper.InitializeAWS(s.settings)
 	showIntro()
-	countryOptions := getRegionsAndCountries()
+	countryOptions := s.getRegionsAndCountries()
 	showRegionsOptions(countryOptions)
 	selection := getUserInput(len(countryOptions), nil)
 	region, err := getRegionFromUserInput(countryOptions, selection)

@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	log "github.com/sirupsen/logrus"
@@ -94,4 +95,34 @@ func (config *SSHConfig) connectToSSH() (*ssh.Client, error) {
 	hostWithPort := fmt.Sprintf("%s:%s", config.SSHHost, config.SSHPort)
 	sshConn, err := ssh.Dial("tcp", hostWithPort, sshConf)
 	return sshConn, err
+}
+
+func (config *SSHConfig) GetNewSSHSession() (*ssh.Session, error) {
+	client, err := config.connectToSSH()
+	if err != nil {
+		return nil, err
+	}
+	session, err := client.NewSession()
+	if err != nil {
+		return nil, err
+	}
+	return session, nil
+}
+
+func (config *SSHConfig) IssueCommandsViaSSH(session *ssh.Session, commandsToExecute []string) {
+	defer func(session *ssh.Session) {
+		err := session.Close()
+		if err != nil {
+			log.Warnf("Closing SSH Session failed with error: %s\n", err)
+		}
+	}(session)
+	for i := range commandsToExecute {
+		var output bytes.Buffer
+		session.Stdout = &output
+		err := session.Run(commandsToExecute[i])
+		if err != nil {
+			log.Warnf("Executing command `%s` failed with error: %s\n", commandsToExecute[i], err)
+		}
+		log.Infof("`%s` returned `%s` as output.\n", commandsToExecute[i], output.String())
+	}
 }
