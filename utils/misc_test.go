@@ -28,13 +28,13 @@ func TestGetUserInput(t *testing.T) {
 		defer func(in *os.File) {
 			err := in.Close()
 			if err != nil {
-				log.Warnf("Testing TestGetUserInput resulted in non fatal errors: %s", err)
+				log.Warnf("Testing TestGetUserInput resulted in non fatal errors: %s\n", err)
 			}
 		}(in)
 		defer func(name string) {
 			err := os.Remove(name)
 			if err != nil {
-				log.Warnf("Testing TestGetUserInput resulted in non fatal errors: %s", err)
+				log.Warnf("Testing TestGetUserInput resulted in non fatal errors: %s\n", err)
 			}
 		}(in.Name())
 	}

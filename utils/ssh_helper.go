@@ -31,7 +31,7 @@ func (config *SSHConfig) StartSocksV5Server() {
 	// 3. https://stackoverflow.com/questions/45441735/ssh-handshake-complains-about-missing-host-key
 	sshConn, err := config.connectToSSH()
 	if err != nil {
-		log.Fatalf("SSH Connection failed with error: %s", err)
+		log.Fatalf("SSH Connection failed with error: %s\n", err)
 	}
 	defer func(sshConn *ssh.Client) {
 		err := sshConn.Close()
@@ -55,7 +55,7 @@ func (config *SSHConfig) StartSocksV5Server() {
 		}
 		socksV5Address := fmt.Sprintf("%s:%s", config.SocksV5IP, config.SocksV5Port)
 		if err := serverSocks.ListenAndServe("tcp", socksV5Address); err != nil {
-			log.Fatalf("Failed to create socks5 server %s", err)
+			log.Fatalf("Failed to create socks5 server %s\n", err)
 		}
 	}()
 	log.Infoln("Started SocksV5 server.")
@@ -85,7 +85,7 @@ func cleanup() {
 func (config *SSHConfig) connectToSSH() (*ssh.Client, error) {
 	signer, err := ssh.ParsePrivateKey(config.PrivateKey)
 	if err != nil {
-		log.Fatalf("Unable to parse private key: %v", err)
+		log.Fatalf("Unable to parse private key: %v\n", err)
 	}
 	sshConf := &ssh.ClientConfig{
 		User:            config.SSHUsername,

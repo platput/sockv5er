@@ -9,6 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go/aws"
+	log "github.com/sirupsen/logrus"
 )
 
 type AWSHelper struct {
@@ -19,6 +20,7 @@ type AWSHelper struct {
 	defaultVPCID    string
 	ec2InstanceId   string
 	keyPairKey      string
+	Settings        *Settings
 }
 
 func (helper *AWSHelper) InitializeAWS(s *Settings) error {
@@ -40,6 +42,53 @@ func (helper *AWSHelper) GetRegions() []types.Region {
 		return nil
 	}
 	return regions.Regions
+}
+
+func (helper *AWSHelper) CreateAWSResources(region string, s *Settings) error {
+	err := helper.SetRegion(region, s)
+	if err != nil {
+		return err
+	}
+	log.Infof("Region set as: `%s`.\n", helper.region)
+	err = helper.CreateSecurityGroup()
+	if err != nil {
+		return err
+	}
+	log.Infof("Security Group with ID: `%s` created.\n", helper.securityGroupID)
+	err = helper.CreateKeyPair()
+	if err != nil {
+		return err
+	}
+	log.Infof("Key Pair: `%s` created.\n", helper.keyPairName)
+	err = helper.CreateEC2Instance()
+	if err != nil {
+		return err
+	}
+	log.Infof("Instance with id: `%s` created.\n", helper.ec2InstanceId)
+	return nil
+}
+
+func (helper *AWSHelper) DeleteAWSResources(region string, s *Settings) error {
+	err := helper.SetRegion(region, s)
+	if err != nil {
+		return err
+	}
+	err = helper.TerminateEC2Instance(helper.ec2InstanceId)
+	if err != nil {
+		return err
+	}
+	log.Infof("EC2 instance with ID: `%s` terminated.\n", helper.ec2InstanceId)
+	err = helper.DeleteKeyPair(helper.keyPairName)
+	if err != nil {
+		return err
+	}
+	log.Infof("Key Pair: `%s` deleted.\n", helper.keyPairName)
+	err = helper.DeleteSecurityGroup(helper.securityGroupID)
+	if err != nil {
+		return err
+	}
+	log.Infof("Security group with id: `%s` deleted.\n", helper.securityGroupID)
+	return nil
 }
 
 func (helper *AWSHelper) SetRegion(region string, s *Settings) error {
@@ -73,7 +122,7 @@ func (helper *AWSHelper) GetDefaultVPC() error {
 			return nil
 		}
 	}
-	errorMessage := fmt.Sprintf("Unknown error in getting the default VPC for the region %s", helper.region)
+	errorMessage := fmt.Sprintf("Unknown error in getting the default VPC for the region %s\n", helper.region)
 	return errors.New(errorMessage)
 }
 
@@ -129,8 +178,8 @@ func (helper *AWSHelper) CreateKeyPair() error {
 	return nil
 }
 
-func (helper *AWSHelper) DeleteKeyPair() error {
-	keypairInput := &ec2.DeleteKeyPairInput{KeyName: aws.String(helper.keyPairName)}
+func (helper *AWSHelper) DeleteKeyPair(keyPairName string) error {
+	keypairInput := &ec2.DeleteKeyPairInput{KeyName: aws.String(keyPairName)}
 	_, err := helper.client.DeleteKeyPair(context.TODO(), keypairInput)
 	if err != nil {
 		return err
@@ -138,9 +187,9 @@ func (helper *AWSHelper) DeleteKeyPair() error {
 	return nil
 }
 
-func (helper *AWSHelper) DeleteSecurityGroup() error {
+func (helper *AWSHelper) DeleteSecurityGroup(securityGroupId string) error {
 	sgInput := &ec2.DeleteSecurityGroupInput{
-		GroupId: aws.String(helper.securityGroupID),
+		GroupId: aws.String(securityGroupId),
 	}
 	_, err := helper.client.DeleteSecurityGroup(context.TODO(), sgInput)
 	if err != nil {
@@ -149,9 +198,9 @@ func (helper *AWSHelper) DeleteSecurityGroup() error {
 	return nil
 }
 
-func (helper *AWSHelper) TerminateEC2Instance() error {
+func (helper *AWSHelper) TerminateEC2Instance(instanceId string) error {
 	instanceInput := &ec2.TerminateInstancesInput{
-		InstanceIds: []string{helper.ec2InstanceId},
+		InstanceIds: []string{instanceId},
 	}
 	_, err := helper.client.TerminateInstances(context.TODO(), instanceInput)
 	if err != nil {
