@@ -22,8 +22,10 @@ func showIntro() {
 }
 
 type SocksV5Er struct {
-	settings  *Settings
-	awsHelper *AWSHelper
+	settings    *Settings
+	awsHelper   *AWSHelper
+	cloudHelper *CloudHelper
+	tracker     ResourcesTracker
 }
 
 func (s *SocksV5Er) generateCountryOptions() ([]map[string]string, error) {
@@ -38,7 +40,7 @@ func (s *SocksV5Er) generateCountryOptions() ([]map[string]string, error) {
 			country := gh.GetCountryShortName(country)
 			countryToRegionMap := map[string]string{
 				"country": country,
-				"region":  *regions[i].RegionName,
+				"Region":  *regions[i].RegionName,
 			}
 			countryOptions = append(countryOptions, countryToRegionMap)
 		}
@@ -62,7 +64,7 @@ func showRegionsOptions(countryOptions []map[string]string) {
 	t.SetOutputMirror(os.Stdout)
 	t.AppendHeader(table.Row{"#", "Country", "Region"})
 	for i := range countryOptions {
-		t.AppendRows([]table.Row{{i + 1, countryOptions[i]["country"], countryOptions[i]["region"]}})
+		t.AppendRows([]table.Row{{i + 1, countryOptions[i]["country"], countryOptions[i]["Region"]}})
 		t.AppendSeparator()
 	}
 	t.Render()
@@ -70,7 +72,7 @@ func showRegionsOptions(countryOptions []map[string]string) {
 
 func getRegionFromUserInput(countryOptions []map[string]string, selection int) (string, error) {
 	regionID := selection - 1
-	region := countryOptions[regionID]["region"]
+	region := countryOptions[regionID]["Region"]
 	return region, nil
 }
 
@@ -80,7 +82,7 @@ func getUserInput(numberOfRegions int, in *os.File) int {
 	}
 	regionsRange := numberOfRegions
 	var regionID = 0
-	fmt.Println("Enter the id of the region in which you need to create the socks v5 proxy on.")
+	fmt.Println("Enter the id of the Region in which you need to create the socks v5 proxy on.")
 	fmt.Printf("Default is 1. Range 1-%d: ", numberOfRegions)
 	for {
 		_, err := fmt.Fscanf(in, "%d\n", &regionID)
@@ -95,25 +97,19 @@ func getUserInput(numberOfRegions int, in *os.File) int {
 	return regionID
 }
 
-func createSocksV5Tunnel() {
+func (s *SocksV5Er) createSocksV5Tunnel() {
 	config := SSHConfig{}
-	e := ENVData{}
-	settings, _ := e.Read()
-	config.SocksV5IP = "127.0.0.1"
-	config.SocksV5Port = "1337"
-	config.SSHHost = "techtuft.com"
-	config.SSHPort = "22"
-	privateKey, err := ReadFileContent(settings.PrivateKeyPath)
-	if err != nil {
-		log.Fatal(err)
-	}
-	config.PrivateKey = privateKey
-	config.KnownHostsFilepath = settings.SSHKnownHostsPath
-	config.SSHUsername = "ubuntu"
+	config.PrivateKey = []byte(s.awsHelper.KeyPairKey)
+	config.KnownHostsFilepath = s.settings.SSHKnownHostsPath
+	config.SSHUsername = s.settings.SSHUserName
+	config.SSHHost = s.awsHelper.InstanceEP
+	config.SSHPort = s.settings.SSHPort
+	config.SocksV5IP = s.settings.SocksV5Host
+	config.SocksV5Port = s.settings.SocksV5Port
 	config.StartSocksV5Server()
 }
 
-func processResourcesYAMLFileIfExists() {
+func (s *SocksV5Er) processResourcesYAMLFileIfExists() {
 	status, resourcesFilepath := CheckIfResourcesYAMLExistsAndReturnPath()
 	if status == true {
 		fmt.Printf("SockV5er resources.yaml file exists at the path `%s`.\n Clean up before continuing?\n"+
@@ -125,24 +121,26 @@ func processResourcesYAMLFileIfExists() {
 		if err != nil {
 			log.Fatalf("Unexpected input. %s\n", err)
 		}
-		var tracker ResourcesTracker
-		tracker = &YAMLHelper{
+		s.tracker = &YAMLHelper{
 			filepath: resourcesFilepath,
 		}
-		err = tracker.ReadResourcesFile()
+		err = s.tracker.ReadResourcesFile()
 		if err != nil {
+			log.Warnf("Reading resources.yaml file failed with error: %s\n", err)
 			return
 		}
-		cloudHelper := CloudHelper{awsHelper: &awsHelper}
+		s.cloudHelper.awsHelper = s.awsHelper
 		if strings.ToLower(cleanFlag) == "y" {
 			// clean resources from yaml file
-			resources := *tracker.GetResources()
-			for i := range resources {
-				resource := &resources[i]
-				err = cloudHelper.DeleteResource(resource)
-				tracker.RemoveResource(resource)
+			resources := s.tracker.GetResources()
+			for i := range *resources {
+				resource := (*resources)[i]
+				// Deleting the resource from AWS
+				err = s.cloudHelper.DeleteResource(&resource)
+				// Removing the resource from resources.yaml
+				s.tracker.RemoveResource(&resource)
 				if err != nil {
-					log.Warnf(
+					fmt.Printf(
 						"Couldn't delete atleast one resource. Please delete the resources manually.\n. Region: %s\nInstance Id: %s\nKeypair Name: %s\nSecurity Group Id: %s\n",
 						resource.Region,
 						resource.InstanceId,
@@ -153,20 +151,24 @@ func processResourcesYAMLFileIfExists() {
 			}
 		} else {
 			// proceed without cleaning
-			log.Warnln("Continuing without deleting the resources might incur additional unnecessary charges in your AWS account.")
+			fmt.Printf("Continuing without deleting the resources might incur additional unnecessary charges in your AWS account.")
 		}
 	}
 }
 
-var awsHelper = AWSHelper{}
-
 func StartWorker() {
+	var awsHelper AWSHelper
+	var tracker ResourcesTracker
+	tracker = &YAMLHelper{}
+	var cloudHelper CloudHelper
 	s := SocksV5Er{}
 	s.awsHelper = &awsHelper
+	s.tracker = tracker
+	s.cloudHelper = &cloudHelper
 	e := ENVData{}
-	s.settings, _ = e.Read()
+	s.settings = e.Read()
 	err := awsHelper.InitializeAWS(s.settings)
-	processResourcesYAMLFileIfExists()
+	s.processResourcesYAMLFileIfExists()
 	showIntro()
 	countryOptions := s.getRegionsAndCountries()
 	showRegionsOptions(countryOptions)
@@ -175,6 +177,14 @@ func StartWorker() {
 	if err != nil {
 		log.Fatalf("SockV5er failed with error: %s\n", err)
 	}
-	fmt.Printf("Selected region: %s\n", region)
-	createSocksV5Tunnel()
+	fmt.Printf("Selected Region: %s\n", region)
+	resource, err := cloudHelper.CreateResource(AWS)
+	s.tracker.AddResource(resource)
+	if err != nil {
+		log.Fatalf("Exiting program, please submit a bug report at: https://github.com/platoputhur/sockv5er for the error: %s", err)
+	}
+	log.Infoln("Created all the resources required to start the socksv5 server")
+	s.createSocksV5Tunnel()
+	log.Infoln("Started the socksv5 server. ")
+	fmt.Printf("All systems online. You can set up your browser/system to use the socksv5 server.\nDetails: host: %s\nport: %s\n", s.settings.SocksV5Host, s.settings.SocksV5Port)
 }

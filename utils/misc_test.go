@@ -10,7 +10,7 @@ import (
 func TestGetRegionFromUserInput(t *testing.T) {
 	countryOptions := make([]map[string]string, 0)
 	countryOption := make(map[string]string)
-	countryOption["region"] = "us-west-1"
+	countryOption["Region"] = "us-west-1"
 	countryOption["country"] = "USA"
 	countryOptions = append(countryOptions, countryOption)
 	want := "us-west-1"

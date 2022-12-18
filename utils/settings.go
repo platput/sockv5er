@@ -4,7 +4,6 @@ import (
 	log "github.com/sirupsen/logrus"
 	"os"
 	"path/filepath"
-	"strconv"
 )
 
 type Reader interface {
@@ -17,26 +16,36 @@ type ENVData struct{}
 type Settings struct {
 	AccessKeyId       string
 	SecretKey         string
-	SocksV5Port       int
+	SocksV5Host       string
+	SocksV5Port       string
 	GeoLocationFile   string
 	PrivateKeyPath    string
 	SSHKnownHostsPath string
+	SSHUserName       string
+	SSHPort           string
 }
 
 func (s *ConfigFileData) Read() *Settings {
 	return &Settings{}
 }
 
-func (s *ENVData) Read() (*Settings, error) {
-	accessKeyId := os.Getenv("AccessKeyId")
-	secretKey := os.Getenv("SecretKey")
-	socksV5PortString := os.Getenv("SocksV5Port")
-	socksV5Port, err := strconv.Atoi(socksV5PortString)
-	geoLocationFile := os.Getenv("GeoLocationFile")
-	privateKeyPath := os.Getenv("PrivateKeyPath")
-	sshKnownHostsPath := os.Getenv("SSHKnownHostsPath")
+func (s *ENVData) Read() *Settings {
+	accessKeyId := os.Getenv("ACCESS_KEY_ID")
+	secretKey := os.Getenv("SECRET_KEY")
+	socksV5Host := os.Getenv("SOCKS_V5_HOST")
+	if socksV5Host == "" {
+		socksV5Host = "127.0.0.1"
+	}
+	socksV5Port := os.Getenv("SOCKS_V5_PORT")
+	geoLocationFile := os.Getenv("GEO_LOCATION_FILE")
+	privateKeyPath := os.Getenv("PRIVATE_KEY_PATH")
+	sshKnownHostsPath := os.Getenv("SSH_KNOWN_HOSTS_PATH")
 	if geoLocationFile == "" {
 		geoLocationFile = filepath.Join("assets", "IP2LOCATION-LITE-DB1.IPV6.BIN")
+	}
+	sshUsername := os.Getenv("SSH_USERNAME")
+	if sshUsername == "" {
+		sshUsername = "ec2-user"
 	}
 	if sshKnownHostsPath == "" {
 		homeDir, err := os.UserHomeDir()
@@ -45,12 +54,19 @@ func (s *ENVData) Read() (*Settings, error) {
 		}
 		sshKnownHostsPath = filepath.Join(homeDir, ".ssh/known_hosts")
 	}
+	sshPort := os.Getenv("SSH_PORT")
+	if sshPort == "" {
+		sshPort = "22"
+	}
 	return &Settings{
 		AccessKeyId:       accessKeyId,
 		SecretKey:         secretKey,
+		SocksV5Host:       socksV5Host,
 		SocksV5Port:       socksV5Port,
 		GeoLocationFile:   geoLocationFile,
 		PrivateKeyPath:    privateKeyPath,
 		SSHKnownHostsPath: sshKnownHostsPath,
-	}, err
+		SSHUserName:       sshUsername,
+		SSHPort:           sshPort,
+	}
 }
