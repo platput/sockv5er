@@ -2,6 +2,7 @@ package utils
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -10,89 +11,158 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go/aws"
 	log "github.com/sirupsen/logrus"
+	"strings"
+	"time"
 )
 
-type AWSHelper struct {
+type AWSRepository struct {
 	Client          *ec2.Client
 	Region          string
-	KeyPairName     string
+	KeyPairId       string
 	SecurityGroupID string
 	defaultVPCID    string
 	Ec2InstanceId   string
-	InstanceEP      string
+	InstanceIP      string
 	KeyPairKey      string
-	Settings        *Settings
 }
 
-func (helper *AWSHelper) InitializeAWS(s *Settings) error {
+func NewAWSProvider() CloudProvider {
+	return &AWSRepository{}
+}
+
+func (repo *AWSRepository) UpdateTracker(resources map[string]string, op TrackingOp, tracker *ResourceTracker) {
+	awsResource := FromMap(resources)
+	if op == Add {
+		tracker.AddAWSResource(awsResource)
+	} else if op == Remove {
+		tracker.RemoveAWSResource(awsResource)
+	}
+	err := tracker.WriteResourcesFile()
+	if err != nil {
+		log.Warnf("Updating resources tracker file failed with err: %s.", err)
+	}
+}
+
+func (repo *AWSRepository) Initialize(s *Settings) error {
+	client, err := getEC2Client(s)
+	if err != nil {
+		return err
+	}
+	repo.Client = client
+	return nil
+}
+
+func getEC2Client(settings *Settings) (*ec2.Client, error) {
 	cfg, err := config.LoadDefaultConfig(
 		context.TODO(),
 		config.WithCredentialsProvider(
-			credentials.NewStaticCredentialsProvider(s.AccessKeyId, s.SecretKey, "")))
+			credentials.NewStaticCredentialsProvider(settings.AccessKeyId, settings.SecretKey, "")))
 	if err != nil {
-		return err
+		return nil, err
 	} else {
-		helper.Client = ec2.NewFromConfig(cfg)
+		return ec2.NewFromConfig(cfg), nil
+	}
+}
+
+func (repo *AWSRepository) GetRegions(s *Settings) []map[string]string {
+	result, err := repo.Client.DescribeRegions(context.TODO(), &ec2.DescribeRegionsInput{})
+	if err != nil {
+		return []map[string]string{}
+	}
+	regions := result.Regions
+	gh := GeoHelper{Settings: s}
+	cloudAgnosticRegions := make([]map[string]string, 0)
+	for i := range regions {
+		country, err := gh.FindCountry(*regions[i].Endpoint)
+		if err != nil {
+			log.Warnf("Finding country for endpoint %s failed with error %v\n", *regions[i].Endpoint, err)
+		} else {
+			country := gh.GetCountryShortName(country)
+			countryToRegionMap := map[string]string{
+				"country": country,
+				"Region":  *regions[i].RegionName,
+			}
+			cloudAgnosticRegions = append(cloudAgnosticRegions, countryToRegionMap)
+		}
+	}
+	return cloudAgnosticRegions
+}
+
+func (repo *AWSRepository) CreateResources(region string, s *Settings, tracker *ResourceTracker) error {
+	err := repo.SetRegion(region, s)
+	if err != nil {
+		resource := ToMap(FromAWSRepository(repo))
+		repo.UpdateTracker(resource, Add, tracker)
+		return err
+	}
+	log.Infof("Region set as: `%s`.\n", repo.Region)
+	err = repo.CreateSecurityGroup()
+	if err != nil {
+		resource := ToMap(FromAWSRepository(repo))
+		repo.UpdateTracker(resource, Add, tracker)
+		return err
+	}
+	log.Infof("Security Group with ID: `%s` created.\n", repo.SecurityGroupID)
+	err = repo.CreateKeyPair()
+	if err != nil {
+		resource := ToMap(FromAWSRepository(repo))
+		repo.UpdateTracker(resource, Add, tracker)
+		return err
+	}
+	log.Infof("Key Pair: `%s` created.\n", repo.KeyPairId)
+	instanceId, err := repo.CreateEC2Instance()
+	if err != nil {
+		resource := ToMap(FromAWSRepository(repo))
+		repo.UpdateTracker(resource, Add, tracker)
+		return err
+	}
+	repo.Ec2InstanceId = instanceId
+	log.Infof("Instance with id: `%s` created.\n", repo.Ec2InstanceId)
+	resource := ToMap(FromAWSRepository(repo))
+	repo.UpdateTracker(resource, Add, tracker)
+	repo.WaitUntilInstanceIsActive(repo.Ec2InstanceId)
+	repo.InstanceIP, err = repo.getPublicIPAddress(instanceId)
+	if err != nil {
+		log.Fatalf("Unknown error occured while trying to create EC2 Instance. Details: %s", err)
 	}
 	return nil
 }
 
-func (helper *AWSHelper) GetRegions() []types.Region {
-	regions, err := helper.Client.DescribeRegions(context.TODO(), &ec2.DescribeRegionsInput{})
-	if err != nil {
-		return nil
-	}
-	return regions.Regions
-}
-
-func (helper *AWSHelper) CreateAWSResources(region string, s *Settings) error {
-	err := helper.SetRegion(region, s)
+func (repo *AWSRepository) DeleteResources(region string, s *Settings, tracker *ResourceTracker) error {
+	err := repo.SetRegion(region, s)
 	if err != nil {
 		return err
 	}
-	log.Infof("Region set as: `%s`.\n", helper.Region)
-	err = helper.CreateSecurityGroup()
-	if err != nil {
-		return err
+	if repo.Ec2InstanceId != "" {
+		err = repo.TerminateEC2Instance(repo.Ec2InstanceId)
+		if err != nil {
+			log.Warnf("EC2 instance termination failed with error: %s", err)
+			return err
+		}
+		log.Infof("EC2 instance with ID: `%s` terminated.\n", repo.Ec2InstanceId)
 	}
-	log.Infof("Security Group with ID: `%s` created.\n", helper.SecurityGroupID)
-	err = helper.CreateKeyPair()
-	if err != nil {
-		return err
+	if repo.KeyPairId != "" {
+		err = repo.DeleteKeyPair(repo.KeyPairId)
+		if err != nil {
+			log.Warnf("EC2 key pair deletion failed with error: %s", err)
+			return err
+		}
+		log.Infof("Key Pair: `%s` deleted.\n", repo.KeyPairId)
 	}
-	log.Infof("Key Pair: `%s` created.\n", helper.KeyPairName)
-	err = helper.CreateEC2Instance()
-	if err != nil {
-		return err
+	if repo.SecurityGroupID != "" {
+		err = repo.DeleteSecurityGroup(repo.SecurityGroupID)
+		if err != nil {
+			log.Warnf("EC2 security group deletion failed with error: %s", err)
+			return err
+		}
+		log.Infof("Security group with id: `%s` deleted.\n", repo.SecurityGroupID)
 	}
-	log.Infof("Instance with id: `%s` created.\n", helper.Ec2InstanceId)
+	resource := ToMap(FromAWSRepository(repo))
+	repo.UpdateTracker(resource, Remove, tracker)
 	return nil
 }
 
-func (helper *AWSHelper) DeleteAWSResources(region string, s *Settings) error {
-	err := helper.SetRegion(region, s)
-	if err != nil {
-		return err
-	}
-	err = helper.TerminateEC2Instance(helper.Ec2InstanceId)
-	if err != nil {
-		return err
-	}
-	log.Infof("EC2 instance with ID: `%s` terminated.\n", helper.Ec2InstanceId)
-	err = helper.DeleteKeyPair(helper.KeyPairName)
-	if err != nil {
-		return err
-	}
-	log.Infof("Key Pair: `%s` deleted.\n", helper.KeyPairName)
-	err = helper.DeleteSecurityGroup(helper.SecurityGroupID)
-	if err != nil {
-		return err
-	}
-	log.Infof("Security group with id: `%s` deleted.\n", helper.SecurityGroupID)
-	return nil
-}
-
-func (helper *AWSHelper) SetRegion(region string, s *Settings) error {
+func (repo *AWSRepository) SetRegion(region string, s *Settings) error {
 	cfg, err := config.LoadDefaultConfig(
 		context.TODO(),
 		config.WithCredentialsProvider(
@@ -101,11 +171,20 @@ func (helper *AWSHelper) SetRegion(region string, s *Settings) error {
 	if err != nil {
 		return err
 	}
-	helper.Client = ec2.NewFromConfig(cfg)
+	repo.Region = region
+	repo.Client = ec2.NewFromConfig(cfg)
 	return nil
 }
 
-func (helper *AWSHelper) GetDefaultVPC() error {
+func (repo *AWSRepository) PrepareResourcesForDeletion(resource map[string]string) {
+	res := FromMap(resource)
+	repo.Region = res.Region
+	repo.Ec2InstanceId = res.InstanceId
+	repo.KeyPairId = res.KeyPairId
+	repo.SecurityGroupID = res.SecurityGroupId
+}
+
+func (repo *AWSRepository) GetDefaultVPC() error {
 	isDefaultFilter := types.Filter{
 		Name:   aws.String("is-default"),
 		Values: []string{"true"},
@@ -114,98 +193,176 @@ func (helper *AWSHelper) GetDefaultVPC() error {
 	vpcInput := &ec2.DescribeVpcsInput{
 		Filters: filters,
 	}
-	vpcs, err := helper.Client.DescribeVpcs(context.TODO(), vpcInput)
+	vpcs, err := repo.Client.DescribeVpcs(context.TODO(), vpcInput)
 	if err != nil {
 		return err
 	} else {
 		if len(vpcs.Vpcs) > 0 {
-			helper.defaultVPCID = *vpcs.Vpcs[0].VpcId
+			repo.defaultVPCID = *vpcs.Vpcs[0].VpcId
 			return nil
 		}
 	}
-	errorMessage := fmt.Sprintf("Unknown error in getting the default VPC for the Region %s\n", helper.Region)
+	errorMessage := fmt.Sprintf("Unknown error in getting the default VPC for the Region %s\n", repo.Region)
 	return errors.New(errorMessage)
 }
 
-func (helper *AWSHelper) CreateEC2Instance() error {
+func (repo *AWSRepository) CreateEC2Instance() (string, error) {
 	userdata := fmt.Sprintf("#!/bin/bash\nshutdown +20")
+	encodedUserdata := base64.StdEncoding.EncodeToString([]byte(userdata))
+	var maxCount int32 = 1
+	var minCount int32 = 1
+	var keyName = fmt.Sprintf("sockv5er-keypair-%s", repo.Region)
 	instanceInput := &ec2.RunInstancesInput{
 		ImageId:                           aws.String("resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"),
 		InstanceInitiatedShutdownBehavior: "terminate",
 		InstanceType:                      "t2.micro",
-		KeyName:                           aws.String(helper.KeyPairName),
-		SecurityGroupIds:                  []string{helper.SecurityGroupID},
-		UserData:                          aws.String(userdata),
+		KeyName:                           &keyName,
+		SecurityGroupIds:                  []string{repo.SecurityGroupID},
+		UserData:                          aws.String(encodedUserdata),
+		MaxCount:                          &maxCount,
+		MinCount:                          &minCount,
 	}
-	instance, err := helper.Client.RunInstances(context.TODO(), instanceInput)
+	instance, err := repo.Client.RunInstances(context.TODO(), instanceInput)
 	if err != nil {
-		return err
+		return "", err
 	}
-	helper.Ec2InstanceId = *instance.Instances[0].InstanceId
-	return nil
+	return *instance.Instances[0].InstanceId, nil
 }
 
-//func (helper *AWSHelper) CheckIfInstanceIsActive(instanceId string) (bool, error) {
-//	return false, nil
-//}
-
-func (helper *AWSHelper) CreateSecurityGroup() error {
-	groupName := fmt.Sprintf("sockv5er-sg-group-%s", helper.Region)
-	description := fmt.Sprintf("Security group created by sockv5er for the Region %s with just ssh enabled.", helper.Region)
+func (repo *AWSRepository) CreateSecurityGroup() error {
+	groupName := fmt.Sprintf("sockv5er-sg-group-%s", repo.Region)
+	description := fmt.Sprintf("Security group created by sockv5er for the Region %s with just ssh enabled.", repo.Region)
 	sgInput := &ec2.CreateSecurityGroupInput{
 		GroupName:   aws.String(groupName),
 		Description: aws.String(description),
-		VpcId:       aws.String(helper.defaultVPCID),
+		VpcId:       aws.String(repo.defaultVPCID),
 	}
-	group, err := helper.Client.CreateSecurityGroup(context.TODO(), sgInput)
+	group, err := repo.Client.CreateSecurityGroup(context.TODO(), sgInput)
 	if err != nil {
 		return err
 	}
-	helper.SecurityGroupID = *group.GroupId
+	repo.SecurityGroupID = *group.GroupId
 	return nil
 }
 
-func (helper *AWSHelper) CreateKeyPair() error {
-	keyName := fmt.Sprintf("sockv5er-keypair-Region-%s", helper.Region)
+func (repo *AWSRepository) CreateKeyPair() error {
+	keyName := fmt.Sprintf("sockv5er-keypair-%s", repo.Region)
 	keypairInput := &ec2.CreateKeyPairInput{
 		KeyName: aws.String(keyName),
 	}
-	keypair, err := helper.Client.CreateKeyPair(context.TODO(), keypairInput)
+	keypair, err := repo.Client.CreateKeyPair(context.TODO(), keypairInput)
 	if err != nil {
 		return err
 	}
-	helper.KeyPairName = *keypair.KeyPairId
-	helper.KeyPairKey = *keypair.KeyMaterial
+	repo.KeyPairId = *keypair.KeyPairId
+	repo.KeyPairKey = *keypair.KeyMaterial
 	return nil
 }
 
-func (helper *AWSHelper) DeleteKeyPair(keyPairName string) error {
-	keypairInput := &ec2.DeleteKeyPairInput{KeyName: aws.String(keyPairName)}
-	_, err := helper.Client.DeleteKeyPair(context.TODO(), keypairInput)
+func (repo *AWSRepository) DeleteKeyPair(keyPairId string) error {
+	keypairInput := &ec2.DeleteKeyPairInput{KeyPairId: aws.String(keyPairId)}
+	_, err := repo.Client.DeleteKeyPair(context.TODO(), keypairInput)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (helper *AWSHelper) DeleteSecurityGroup(securityGroupId string) error {
+func (repo *AWSRepository) DeleteSecurityGroup(securityGroupId string) error {
 	sgInput := &ec2.DeleteSecurityGroupInput{
 		GroupId: aws.String(securityGroupId),
 	}
-	_, err := helper.Client.DeleteSecurityGroup(context.TODO(), sgInput)
+	_, err := repo.Client.DeleteSecurityGroup(context.TODO(), sgInput)
+	if err != nil {
+		if strings.Contains(err.Error(), "InvalidGroup.NotFound") {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+func (repo *AWSRepository) TerminateEC2Instance(instanceId string) error {
+	instanceInput := &ec2.TerminateInstancesInput{
+		InstanceIds: []string{instanceId},
+	}
+	_, err := repo.Client.TerminateInstances(context.TODO(), instanceInput)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (helper *AWSHelper) TerminateEC2Instance(instanceId string) error {
-	instanceInput := &ec2.TerminateInstancesInput{
+func (repo *AWSRepository) CheckIfInstanceIsActive(instanceId string) bool {
+	// Create a "describe instances" input with the specified instance ID
+	instanceInput := &ec2.DescribeInstancesInput{
 		InstanceIds: []string{instanceId},
 	}
-	_, err := helper.Client.TerminateInstances(context.TODO(), instanceInput)
+	// Use the EC2 client to describe the instances
+	result, err := repo.Client.DescribeInstances(context.TODO(), instanceInput)
 	if err != nil {
-		return err
+		return false
 	}
-	return nil
+	// Check if the instance is running
+	if len(result.Reservations) > 0 && len(result.Reservations[0].Instances) > 0 {
+		state := result.Reservations[0].Instances[0].State.Name
+		if state == "running" {
+			log.Infoln("Instance is ready.... \nWaiting 10 seconds to finish up the public ip assignment ")
+			time.Sleep(10 * time.Second)
+			return true
+		}
+	}
+	return false
+}
+
+func (repo *AWSRepository) WaitUntilInstanceIsActive(instanceId string) bool {
+	fn := func() bool {
+		return repo.CheckIfInstanceIsActive(instanceId)
+	}
+	status := callWithTimeout(5*time.Minute, fn)
+	return status
+}
+
+func callWithTimeout(duration time.Duration, fn func() bool) bool {
+	timeout := time.After(duration)
+	done := make(chan bool)
+	defer close(done)
+
+	go func() {
+		for {
+			select {
+			case <-timeout:
+				done <- false
+				return
+			default:
+				if fn() {
+					done <- true
+					return
+				}
+			}
+		}
+	}()
+	return <-done
+}
+
+func (repo *AWSRepository) GetHostIP() string {
+	return repo.InstanceIP
+}
+
+func (repo *AWSRepository) GetPrivateKey() []byte {
+	return []byte(repo.KeyPairKey)
+}
+
+func (repo *AWSRepository) getPublicIPAddress(instanceID string) (string, error) {
+	input := &ec2.DescribeInstancesInput{
+		InstanceIds: []string{instanceID},
+	}
+	resp, err := repo.Client.DescribeInstances(context.TODO(), input)
+	if err != nil {
+		return "", err
+	}
+	if len(resp.Reservations) == 0 || len(resp.Reservations[0].Instances) == 0 {
+		return "", fmt.Errorf("instance not found: %s", instanceID)
+	}
+	return *resp.Reservations[0].Instances[0].PublicIpAddress, nil
 }

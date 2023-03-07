@@ -64,7 +64,7 @@ func (config *SSHConfig) StartSocksV5Server() {
 	go func(ch chan os.Signal) {
 		exitSignal := <-ch
 		if exitSignal == syscall.SIGINT || exitSignal == syscall.SIGTERM {
-			cleanup()
+			config.cleanup()
 			os.Exit(0)
 		}
 	}(ch)
@@ -74,10 +74,19 @@ func (config *SSHConfig) StartSocksV5Server() {
 	return
 }
 
-func cleanup() {
+func (config *SSHConfig) cleanup() {
 	log.Infoln("Stopping SocksV5 Server")
-	log.Infoln("Disconnecting SSH Connection.")
 	log.Infoln("Terminating EC2 Instance.")
+	session, err := config.GetNewSSHSession()
+	log.Warnf("Cleaning up resources fauled with err: %s", err)
+	defer func(session *ssh.Session) {
+		err := session.Close()
+		if err != nil {
+
+		}
+	}(session)
+	commandsToExecute := []string{"sudo shutdown now", ""}
+	config.IssueCommandsViaSSH(session, commandsToExecute)
 	log.Infoln("All clean up done without any errors.")
 	log.Infoln("Exiting...")
 }

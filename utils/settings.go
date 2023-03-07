@@ -23,6 +23,7 @@ type Settings struct {
 	SSHKnownHostsPath string
 	SSHUserName       string
 	SSHPort           string
+	TrackingFilepath  string
 }
 
 func (s *ConfigFileData) Read() *Settings {

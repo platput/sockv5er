@@ -11,15 +11,12 @@ func TestRead(t *testing.T) {
 	s := Settings{
 		AccessKeyId:     "1234567890",
 		SecretKey:       "09876654321",
-		SocksV5Port:     1774,
+		SocksV5Port:     "1774",
 		GeoLocationFile: "assets/IP2LOCATION-LITE-DB1.IPV6.BIN",
 	}
 	setAllENVs(&s)
 	env := ENVData{}
-	settings, err := env.Read()
-	if err != nil {
-		t.Errorf("Unexpected error %v", err)
-	}
+	settings := env.Read()
 	if (*settings).AccessKeyId != s.AccessKeyId || (*settings).SecretKey != s.SecretKey || (*settings).SocksV5Port != s.SocksV5Port {
 		t.Error("Unexpected values from the env")
 	}
