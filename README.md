@@ -22,6 +22,7 @@ SOCKS_V5_PORT=1337 # A free port on your system.
 
 # TODO
 - Postpone the shutdown of the EC2 instance as long as the ssh tunnel is active
+- Create the ec2 security group in such a way that, only the current systems public ip is allowed in the ingres 
 - Handle the exit from the SSH tunnel in a graceful way
 - Add more test cases
 - Make the readme.md a bit more elaborate
