@@ -155,11 +155,11 @@ func StartWorker() {
 	fmt.Printf("Selected Region: %s\n", region)
 
 	if err != nil {
-		log.Fatalf("Exiting program, please submit a bug report at: https://github.com/platoputhur/sockv5er for the error: %s", err)
+		log.Fatalf("Exiting program, please submit a bug report at: https://github.com/platput/sockv5er for the error: %s", err)
 	}
 	err = s.repo.CreateResources(region, s.settings, s.tracker)
 	if err != nil {
-		log.Fatalf("Exiting program, please submit a bug report at: https://github.com/platoputhur/sockv5er for the error: %s", err)
+		log.Fatalf("Exiting program, please submit a bug report at: https://github.com/platput/sockv5er for the error: %s", err)
 	}
 	log.Infoln("Created all the resources required to start the socksv5 server")
 	s.createSocksV5Tunnel()

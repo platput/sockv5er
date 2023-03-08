@@ -1,4 +1,4 @@
-module github.com/platoputhur/sockv5er
+module github.com/platput/sockv5er
 
 go 1.19
 

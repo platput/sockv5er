@@ -1,6 +1,6 @@
 package main
 
-import "github.com/platoputhur/sockv5er/utils"
+import "github.com/platput/sockv5er/utils"
 
 func main() {
 	utils.StartWorker()
