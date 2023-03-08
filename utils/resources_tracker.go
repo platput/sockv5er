@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"fmt"
 	"gopkg.in/yaml.v2"
 )
 
@@ -49,7 +48,6 @@ func (rt *ResourceTracker) WriteResourcesFile() error {
 }
 
 func (rt *ResourceTracker) ReadResourcesFile() error {
-	fmt.Println("rt.filepath", rt)
 	content, err := ReadFileContent(rt.filepath)
 	if err != nil {
 		return err

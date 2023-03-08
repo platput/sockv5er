@@ -140,6 +140,7 @@ func (repo *AWSRepository) DeleteResources(region string, s *Settings, tracker *
 			return err
 		}
 		log.Infof("EC2 instance with ID: `%s` terminated.\n", repo.Ec2InstanceId)
+		repo.WaitUntilInstanceIsTerminated(repo.Ec2InstanceId)
 	}
 	if repo.KeyPairId != "" {
 		err = repo.DeleteKeyPair(repo.KeyPairId)
@@ -242,6 +243,18 @@ func (repo *AWSRepository) CreateSecurityGroup() error {
 		return err
 	}
 	repo.SecurityGroupID = *group.GroupId
+	sgIngressInput := &ec2.AuthorizeSecurityGroupIngressInput{
+		CidrIp:     aws.String("0.0.0.0/0"),
+		FromPort:   aws.Int32(22),
+		GroupId:    group.GroupId,
+		IpProtocol: aws.String("tcp"),
+		ToPort:     aws.Int32(22),
+	}
+	_, err = repo.Client.AuthorizeSecurityGroupIngress(context.TODO(), sgIngressInput)
+	if err != nil {
+		log.Error("Error opening port 22 using security group:", err)
+		return err
+	}
 	return nil
 }
 
@@ -263,6 +276,9 @@ func (repo *AWSRepository) DeleteKeyPair(keyPairId string) error {
 	keypairInput := &ec2.DeleteKeyPairInput{KeyPairId: aws.String(keyPairId)}
 	_, err := repo.Client.DeleteKeyPair(context.TODO(), keypairInput)
 	if err != nil {
+		if strings.Contains(err.Error(), "InvalidKeyPair.NotFound") {
+			return nil
+		}
 		return err
 	}
 	return nil
@@ -288,12 +304,26 @@ func (repo *AWSRepository) TerminateEC2Instance(instanceId string) error {
 	}
 	_, err := repo.Client.TerminateInstances(context.TODO(), instanceInput)
 	if err != nil {
+		if err != nil {
+			if strings.Contains(err.Error(), " InvalidInstanceID.NotFound") {
+				return nil
+			}
+			return err
+		}
 		return err
 	}
 	return nil
 }
 
-func (repo *AWSRepository) CheckIfInstanceIsActive(instanceId string) bool {
+type InstanceState string
+
+const (
+	Running    InstanceState = "running"
+	Stopped                  = "stopped"
+	Terminated               = "terminated"
+)
+
+func (repo *AWSRepository) CheckIfInstanceIsInState(instanceId string, state InstanceState) bool {
 	// Create a "describe instances" input with the specified instance ID
 	instanceInput := &ec2.DescribeInstancesInput{
 		InstanceIds: []string{instanceId},
@@ -305,10 +335,8 @@ func (repo *AWSRepository) CheckIfInstanceIsActive(instanceId string) bool {
 	}
 	// Check if the instance is running
 	if len(result.Reservations) > 0 && len(result.Reservations[0].Instances) > 0 {
-		state := result.Reservations[0].Instances[0].State.Name
-		if state == "running" {
-			log.Infoln("Instance is ready.... \nWaiting 10 seconds to finish up the public ip assignment ")
-			time.Sleep(10 * time.Second)
+		currentState := result.Reservations[0].Instances[0].State.Name
+		if InstanceState(currentState) == state {
 			return true
 		}
 	}
@@ -317,10 +345,37 @@ func (repo *AWSRepository) CheckIfInstanceIsActive(instanceId string) bool {
 
 func (repo *AWSRepository) WaitUntilInstanceIsActive(instanceId string) bool {
 	fn := func() bool {
-		return repo.CheckIfInstanceIsActive(instanceId)
+		return repo.CheckIfInstanceIsInState(instanceId, Running)
 	}
 	status := callWithTimeout(5*time.Minute, fn)
-	return status
+	if status {
+		log.Infoln("Instance is ready.... \nWaiting 10 seconds to finish up the public ip assignment ")
+		time.Sleep(10 * time.Second)
+		return true
+	}
+	return false
+}
+
+func (repo *AWSRepository) WaitUntilInstanceIsTerminated(instanceId string) bool {
+	// Check if the instance exists
+	status, err := repo.CheckIfInstanceExists(instanceId)
+	if err != nil {
+		log.Errorf("Unknown error while try to check if the instance exists: %s", err)
+		return true
+	}
+	if status == false {
+		return true
+	}
+	fn := func() bool {
+		return repo.CheckIfInstanceIsInState(instanceId, Terminated)
+	}
+	status = callWithTimeout(5*time.Minute, fn)
+	if status {
+		log.Infoln("Instance has been terminated.... \nWaiting 10 seconds to finish up!")
+		time.Sleep(10 * time.Second)
+		return true
+	}
+	return false
 }
 
 func callWithTimeout(duration time.Duration, fn func() bool) bool {
@@ -365,4 +420,19 @@ func (repo *AWSRepository) getPublicIPAddress(instanceID string) (string, error)
 		return "", fmt.Errorf("instance not found: %s", instanceID)
 	}
 	return *resp.Reservations[0].Instances[0].PublicIpAddress, nil
+}
+
+func (repo *AWSRepository) CheckIfInstanceExists(instanceID string) (bool, error) {
+	input := &ec2.DescribeInstancesInput{
+		InstanceIds: []string{instanceID},
+	}
+	resp, err := repo.Client.DescribeInstances(context.TODO(), input)
+	if err != nil {
+		log.Errorf("Getting instance status failed with error: %s", err)
+		return false, err
+	}
+	if len(resp.Reservations) == 0 || len(resp.Reservations[0].Instances) == 0 {
+		return false, nil
+	}
+	return true, nil
 }

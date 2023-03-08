@@ -97,8 +97,9 @@ func (s *SocksV5Er) processResourcesTrackerFile(resourcesFilepath string) {
 		// clean resources from yaml file
 		repo := NewAWSProvider()
 		resources := s.tracker.GetResources()
-		for i := range *resources {
-			resource := (*resources)[i]
+		resourcesCount := len(*resources)
+		for i := 0; i < resourcesCount; i++ {
+			resource := (*resources)[0]
 			// Deleting the resource from AWSResources
 			repo.PrepareResourcesForDeletion(ToMap(&resource))
 			err := repo.DeleteResources(resource.Region, s.settings, s.tracker)
@@ -112,6 +113,8 @@ func (s *SocksV5Er) processResourcesTrackerFile(resourcesFilepath string) {
 					resource.SecurityGroupId,
 				)
 			}
+			err = s.tracker.ReadResourcesFile()
+			resources = s.tracker.GetResources()
 		}
 	} else {
 		// proceed without cleaning
