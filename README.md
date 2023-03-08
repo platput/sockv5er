@@ -38,4 +38,4 @@ SOCKS_V5_PORT=1337 # A free port on your system.
 - Add better log messages and print statements
 
 # ✏️ Contribute
-All contrbutions are welcome. So raise away your PRs. But I will be prioritising the PRs with items from the TODO list above.
+All contrbutions are welcome. So raise away your PRs. Here's the [contributer guidelines](https://github.com/platput/sockv5er/blob/main/CONTRIBUTING.md).
