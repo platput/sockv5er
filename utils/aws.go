@@ -231,6 +231,13 @@ func (repo *AWSRepository) CreateEC2Instance() (string, error) {
 }
 
 func (repo *AWSRepository) CreateSecurityGroup() error {
+	// Get the external ip of the system
+	externalIP, err := GetExternalIP()
+	if err != nil {
+		externalIP = "0.0.0.0/0"
+	} else {
+		externalIP = externalIP + "/32"
+	}
 	groupName := fmt.Sprintf("sockv5er-sg-group-%s", repo.Region)
 	description := fmt.Sprintf("Security group created by sockv5er for the Region %s with just ssh enabled.", repo.Region)
 	sgInput := &ec2.CreateSecurityGroupInput{
@@ -244,7 +251,7 @@ func (repo *AWSRepository) CreateSecurityGroup() error {
 	}
 	repo.SecurityGroupID = *group.GroupId
 	sgIngressInput := &ec2.AuthorizeSecurityGroupIngressInput{
-		CidrIp:     aws.String("0.0.0.0/0"),
+		CidrIp:     aws.String(externalIP),
 		FromPort:   aws.Int32(22),
 		GroupId:    group.GroupId,
 		IpProtocol: aws.String("tcp"),
