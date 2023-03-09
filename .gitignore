@@ -2,3 +2,8 @@
 .idea
 sockv5er.iml
 sockv5er
+sockv5er.darwin.amd64
+sockv5er.darwin.arm64
+sockv5er.linux.amd64
+sockv5er.linux.arm64
+sockv5er.windows.amd64.exe

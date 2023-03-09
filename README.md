@@ -38,3 +38,6 @@ SOCKS_V5_PORT=1337 # A free port on your system.
 
 # ✏️ Contribute
 All contributions are welcome. So raise away your PRs. Here's the [contributor guidelines](https://github.com/platput/sockv5er/blob/main/CONTRIBUTING.md).
+
+# Developer Notes
+- Use build.sh to build the app for different platforms
