@@ -8,6 +8,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.18.4
 	github.com/aws/aws-sdk-go-v2/credentials v1.13.4
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.75.0
+	github.com/glendc/go-external-ip v0.1.0
 	github.com/ip2location/ip2location-go/v9 v9.5.0
 	github.com/jedib0t/go-pretty/v6 v6.4.3
 	github.com/sirupsen/logrus v1.9.0
