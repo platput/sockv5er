@@ -4,7 +4,7 @@ a tool to create ssh tunnels on demand using the free tier ec2 instances from AW
 ## What does it do:
 - Creates a security group with port 22 open to the world
 - Creates a private key which will be used to connect to the ec2 instance
-- Creates an ec2 instance which will shutdown in 20 minutes if nothing is done.
+- Creates an ec2 instance which will shut down in 20 minutes if nothing is done.
 - Connects to the ec2 instance and starts a socksv5 proxy using ssh tunnel
 - Once you add the proxy settings for 127.0.01:1337 all your browser traffic will be encrypted and transferred through the tunnel between your system and the ec2 instance.
 - Cleans up the ec2 instance after usage.
@@ -38,4 +38,4 @@ SOCKS_V5_PORT=1337 # A free port on your system.
 - Add better log messages and print statements
 
 # ✏️ Contribute
-All contrbutions are welcome. So raise away your PRs. Here's the [contributer guidelines](https://github.com/platput/sockv5er/blob/main/CONTRIBUTING.md).
+All contributions are welcome. So raise away your PRs. Here's the [contributor guidelines](https://github.com/platput/sockv5er/blob/main/CONTRIBUTING.md).
