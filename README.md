@@ -2,7 +2,7 @@
 a tool to create ssh tunnels on demand using the free tier ec2 instances from AWS from any given region
 
 ## What does it do:
-- Creates a security group with port 22 open to the world
+- Creates a security group with port 22 open to the public ip of the user
 - Creates a private key which will be used to connect to the ec2 instance
 - Creates an ec2 instance which will shut down in 20 minutes if nothing is done.
 - Connects to the ec2 instance and starts a socksv5 proxy using ssh tunnel
