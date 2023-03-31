@@ -35,6 +35,7 @@ SOCKS_V5_PORT=1337 # A free port on your system.
 - Handle the exit from the SSH tunnel in a graceful way
 - Make the readme.md a bit more elaborate
 - Add better log messages and print statements
+- Implement functional options. Ref: https://dave.cheney.net/2014/10/17/functional-options-for-friendly-apis
 
 # ✏️ Contribute
 All contributions are welcome. So raise away your PRs. Here's the [contributor guidelines](https://github.com/platput/sockv5er/blob/main/CONTRIBUTING.md).
